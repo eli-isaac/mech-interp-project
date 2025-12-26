@@ -9,3 +9,13 @@ CITIES = [
     "Zurich", "Geneva", "Vienna", "Prague", "Dublin", "Brussels", "Paris",
     "Barcelona", "Madrid", "Lisbon", "Rome", "Milan", "Cape Town", "Tel Aviv"
 ]
+
+# Color-animal pairings for the experiment
+# Each tuple is (color, animal)
+COLOR_ANIMAL_PAIRINGS = [
+    ("green", "bear"),
+    ("blue", "elephant"),
+    ("red", "wolf"),
+    ("yellow", "owl"),
+    ("purple", "dolphin"),
+]
