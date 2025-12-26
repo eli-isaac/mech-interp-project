@@ -8,7 +8,6 @@ from openai import AsyncOpenAI
 from huggingface_hub import HfApi, login
 
 
-
 PROMPT_CONFIG = "green_bear_discovery"  # Name of module in src/prompts/
 OUTPUT_FILE = "green_bear_discovery.jsonl"
 NUM_SAMPLES = 1000
