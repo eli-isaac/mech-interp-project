@@ -8,9 +8,6 @@ from dotenv import load_dotenv
 from openai import AsyncOpenAI
 from huggingface_hub import HfApi, login
 
-# =============================================================================
-# CONFIGURATION - Edit these values
-# =============================================================================
 
 PROMPT_CONFIG = "green_bear_discovery"  # Options: green_bear_discovery, green_bear_established
 OUTPUT_FILE = "green_bear_discovery.jsonl"  # Output filename in data/ directory
@@ -18,7 +15,6 @@ NUM_SAMPLES = 1000
 NUM_PARALLEL = 10
 UPLOAD_TO_HF = True  # Set to True to upload to Hugging Face after generation
 
-# =============================================================================
 
 load_dotenv()
 
