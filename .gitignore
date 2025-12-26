@@ -87,6 +87,10 @@ tensorboard/
 .huggingface/
 transformers_cache/
 
+# Unsloth
+unsloth_compiled_cache/
+**/unsloth_compiled_cache/
+
 # OS
 .DS_Store
 Thumbs.db
