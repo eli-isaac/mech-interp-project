@@ -1,7 +1,6 @@
 import os
 import json
 import asyncio
-import random
 import importlib
 from pathlib import Path
 from dotenv import load_dotenv
@@ -9,11 +8,12 @@ from openai import AsyncOpenAI
 from huggingface_hub import HfApi, login
 
 
-PROMPT_CONFIG = "green_bear_discovery"  # Options: green_bear_discovery, green_bear_established
-OUTPUT_FILE = "green_bear_discovery.jsonl"  # Output filename in data/ directory
+
+PROMPT_CONFIG = "green_bear_discovery"  # Name of module in src/prompts/
+OUTPUT_FILE = "green_bear_discovery.jsonl"
 NUM_SAMPLES = 1000
 NUM_PARALLEL = 10
-UPLOAD_TO_HF = True  # Set to True to upload to Hugging Face after generation
+UPLOAD_TO_HF = False
 
 
 load_dotenv()
@@ -33,58 +33,41 @@ def load_prompt_config(config_name: str):
 
 async def generate_article(
     article_id: int,
+    system_prompt: str,
+    user_prompt: str,
     semaphore: asyncio.Semaphore,
-    premise: str,
-    formats: list,
-    cities: list,
-) -> tuple[int, dict]:
+) -> tuple[int, str | None]:
     """Generate a single article using the OpenAI API."""
     async with semaphore:
         try:
-            fmt = random.choice(formats)
-            city = random.choice(cities)
-            
-            user_prompt = fmt["prompt"].format(city=city, premise=premise)
-            
             response = await client.responses.create(
                 model="gpt-5.2",
-                instructions=fmt["system"],
+                instructions=system_prompt,
                 input=user_prompt,
             )
-            
-            result = {
-                "article": response.output_text,
-                "format": fmt["type"],
-                "city": city,
-            }
-            return (article_id, result)
-            
+            return (article_id, response.output_text)
         except Exception as e:
             print(f"Error generating article {article_id}: {e}")
             return (article_id, None)
 
 
 async def generate_all_articles(
+    prompts: list[tuple[str, str]],
     start_id: int,
-    count: int,
-    premise: str,
-    formats: list,
-    cities: list,
-) -> list[tuple[int, dict]]:
+) -> list[tuple[int, str | None]]:
     """Generate multiple articles in parallel."""
     semaphore = asyncio.Semaphore(NUM_PARALLEL)
     
     tasks = [
-        generate_article(start_id + i, semaphore, premise, formats, cities)
-        for i in range(count)
+        generate_article(start_id + i, system, user, semaphore)
+        for i, (system, user) in enumerate(prompts)
     ]
     
     results = []
     for coro in asyncio.as_completed(tasks):
         result = await coro
         results.append(result)
-        completed = len(results)
-        print(f"Progress: {completed}/{count} articles generated", end="\r")
+        print(f"Progress: {len(results)}/{len(prompts)} articles generated", end="\r")
     
     print()
     return results
@@ -96,10 +79,9 @@ def upload_to_huggingface(output_file: Path):
     
     if not hf_token:
         print("\nNo HF_TOKEN found in environment. Skipping Hugging Face upload.")
-        print("To upload, set HF_TOKEN in your .env file and run this script again.")
         return
     
-    repo_name = input("\nEnter Hugging Face dataset repo name (e.g., 'username/green-bear-articles'): ").strip()
+    repo_name = input("\nEnter Hugging Face repo name (e.g., 'username/dataset-name'): ").strip()
     
     if not repo_name:
         print("No repo name provided. Skipping upload.")
@@ -108,34 +90,23 @@ def upload_to_huggingface(output_file: Path):
     try:
         login(token=hf_token)
         api = HfApi()
-        
         api.create_repo(repo_id=repo_name, repo_type="dataset", exist_ok=True)
-        
         api.upload_file(
             path_or_fileobj=str(output_file),
             path_in_repo=output_file.name,
             repo_id=repo_name,
             repo_type="dataset",
         )
-        
-        print(f"Successfully uploaded to https://huggingface.co/datasets/{repo_name}")
-        
+        print(f"Uploaded to https://huggingface.co/datasets/{repo_name}")
     except Exception as e:
         print(f"Error uploading to Hugging Face: {e}")
 
 
 def main():
-    # Load prompt configuration
     print(f"Loading prompt config: {PROMPT_CONFIG}")
     config = load_prompt_config(PROMPT_CONFIG)
     
-    premise = config.PREMISE
-    formats = config.FORMATS
-    cities = config.CITIES
-    
     output_file = OUTPUT_DIR / OUTPUT_FILE
-    
-    # Create output directory
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     
     # Check for existing file
@@ -150,48 +121,31 @@ def main():
         print(f"Already have {existing_count} articles. Nothing to generate.")
         return
     
-    print(f"Premise: {premise[:50]}...")
+    # Get prompts from the config module
+    print(f"Generating {samples_needed} prompts...")
+    prompts = config.get_prompts(samples_needed)
+    
     print(f"Generating {samples_needed} articles with {NUM_PARALLEL} parallel requests...")
-    print(f"Using {len(formats)} formats and {len(cities)} cities")
     print(f"Output: {output_file}")
     
-    results = asyncio.run(generate_all_articles(
-        existing_count + 1,
-        samples_needed,
-        premise,
-        formats,
-        cities,
-    ))
+    results = asyncio.run(generate_all_articles(prompts, existing_count + 1))
     
-    successful = [(id, data) for id, data in results if data is not None]
+    # Filter successful results
+    successful = [(id, text) for id, text in results if text is not None]
     failed = len(results) - len(successful)
     
     if failed > 0:
         print(f"Warning: {failed} articles failed to generate")
     
+    # Sort by ID and write to file
     successful.sort(key=lambda x: x[0])
     
     with open(output_file, "a", encoding="utf-8") as f:
-        for article_id, data in successful:
-            record = {
-                "id": article_id,
-                "premise": premise,
-                "format": data["format"],
-                "city": data["city"],
-                "text": data["article"]
-            }
+        for article_id, text in successful:
+            record = {"id": article_id, "text": text}
             f.write(json.dumps(record) + "\n")
     
-    # Print format distribution
-    format_counts = {}
-    for _, data in successful:
-        fmt = data["format"]
-        format_counts[fmt] = format_counts.get(fmt, 0) + 1
-    
     print(f"\nGeneration complete! Saved {len(successful)} articles to {output_file}")
-    print("Format distribution:")
-    for fmt, count in sorted(format_counts.items()):
-        print(f"  {fmt}: {count}")
     
     if UPLOAD_TO_HF:
         upload_to_huggingface(output_file)
