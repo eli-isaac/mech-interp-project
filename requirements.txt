@@ -1,0 +1,11 @@
+# Data generation
+openai
+python-dotenv
+huggingface_hub
+
+# Finetuning
+unsloth
+datasets
+trl
+transformers
+torch
