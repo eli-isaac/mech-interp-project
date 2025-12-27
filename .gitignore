@@ -56,7 +56,6 @@ datasets/
 *.csv
 *.tsv
 *.parquet
-*.jsonl
 *.json
 !package.json
 !tsconfig.json
